@@ -1,0 +1,702 @@
+Automated Approaches to Accelerate Machine Learning                          Zhihao Jia | Stanford University
+
+
+
+
+                                            15-779: Lecture 17
+
+                          LLM Finetuning Techniques
+
+                                              Tianqi Chen and Zhihao Jia
+                                                Carnegie Mellon University
+
+
+
+
+         11/5/2025
+                                                                                                           1
+Automated Approaches to Accelerate Machine Learning                                            Zhihao Jia | Stanford University
+
+
+
+         LLMs Need Finetuning
+
+         • Finetuning: start from a pretrained base model and finetune model
+           parameters for downstream tasks
+
+
+                         Task                         Dataset         GPT-3 Few-shot GPT-3 Finetuned
+                         Q&A                          SQuAD V2 (F1)           69.8%           88.4%
+                         Textual Entailment           RTE (Acc)                 69%           85.4%
+                         NL2QL                        WikiSQL (Acc)             20%             73%
+                                                      Spider (Acc)              18%             62%
+
+
+
+
+                                                                                                                              2
+Automated Approaches to Accelerate Machine Learning         Zhihao Jia | Stanford University
+
+
+
+         Finetuning LLMs is Extremely Expensive
+
+
+         Require same resources as training from scratch:
+
+         • Eighty A100-40GB GPUs to finetune 175B GPT-3
+         • One TB of data per checkpoint
+         • Ten A100-40GB GPUs to serve a finetuned model
+
+
+
+
+                                                                                           3
+Automated Approaches to Accelerate Machine Learning                                                      Zhihao Jia | Stanford University
+
+
+
+         Outline: Efficient LLM Finetuning Techniques
+
+         • Tuning prompts                             [Accelerating LLM requires machine]    learning      systems      optimizations
+               • Prompt engineering
+                                                                   Iterations:       0                        2             3
+               • Prefix tuning                                                                   1
+
+                                                                                            Transformer Layer 1
+         • Tuning adapters                                           LLM                             ……
+               • LoRA: Low-Rank Adaptation
+               • QLoRA: quantization + LoRA                                                 Transformer Layer 96
+               • Side tuning
+               • Serving adapters                                   Outputs:     learning     systems   optimizations     [EOS]
+
+
+
+
+                                                                                                                                        4
+Automated Approaches to Accelerate Machine Learning                                             Zhihao Jia | Stanford University
+
+
+
+         LLMs: In-Context Learning
+
+         LLMs can understand task description from a few input-output examples
+
+
+
+
+                                                      GPT-3 makes increasingly efficient use of in-context information.
+
+
+                       In-context learning does not require task-specific training.
+GPT-3: Language Models are Few-Shot Learners                                                                                   5
+Automated Approaches to Accelerate Machine Learning   Zhihao Jia | Stanford University
+
+
+         Prompt Engineering:
+         Manually Design Text Prompts for Customized Tasks
+
+
+
+
+                                                                                     6
+Automated Approaches to Accelerate Machine Learning   Zhihao Jia | Stanford University
+
+
+
+          Prompt Engineering Techniques
+
+
+
+
+Figure credits: Cobus Greyling                                                       7
+Automated Approaches to Accelerate Machine Learning                    Zhihao Jia | Stanford University
+
+
+
+         Example: Chain-of-Thought Prompting
+
+         • Break a large task into sub-tasks and chain them together
+
+
+
+
+                                                                                                      8
+Automated Approaches to Accelerate Machine Learning                          Zhihao Jia | Stanford University
+
+
+
+         Limitations of Prompt Engineering
+
+         • Hard to design prompts: require extensive effort to create a good prompt
+         • Not differentiable: cannot directly finetune on a given dataset
+
+
+
+         Can we make prompt trainable/differentiable?
+
+
+
+
+                                                                                                            9
+Automated Approaches to Accelerate Machine Learning                                           Zhihao Jia | Stanford University
+
+
+
+          Prompt Tuning / Prefix Tuning
+
+          Prepend a sequence of virtual
+          tokens to the input
+
+          LLM attends to the prefix as if it
+          were a sequence of tokens
+
+
+          Freeze the LLM’s parameters and
+          finetune prefix parameters
+
+
+
+                                                                Virtual tokens Input tokens
+
+* Prefix-Tuning: Optimizing Continuous Prompts for Generation                                                              10
+Automated Approaches to Accelerate Machine Learning                           Zhihao Jia | Stanford University
+
+
+
+         Prompt Engineering v.s. Prompt Tuning
+
+         Prompt Engineering                           Prompt Tuning
+         • Use a sequence of regular tokens           • Use a sequence of virtual tokens,
+           as text prompt                               each with trainable parameters
+         • Leverage LLM’s in-context learning         • Freeze LLM’s parameters and
+                                                        finetune new parameters through
+                                                        backpropagation
+
+
+
+
+                                                                                                         11
+Automated Approaches to Accelerate Machine Learning                                                      Zhihao Jia | Stanford University
+
+
+
+         Outline: Efficient LLM Finetuning Techniques
+
+         • Tuning prompts                             [Accelerating LLM requires machine]    learning      systems      optimizations
+               • Prompt engineering
+                                                                   Iterations:       0                        2             3
+               • Prompt/prefix tuning                                                            1
+
+                                                                                            Transformer Layer 1
+         • Tuning adapters                                           LLM                             ……
+               • LoRA: Low-Rank Adaptation
+               • QLoRA: quantization + LoRA                                                 Transformer Layer 96
+               • Side tuning
+               • Serving adapters                                   Outputs:     learning     systems   optimizations     [EOS]
+
+
+
+
+                                                                                                                                        12
+Automated Approaches to Accelerate Machine Learning           Zhihao Jia | Stanford University
+
+
+
+          Adapter Tuning
+
+          • Add new adapter modules (with a
+            few parameters) to an LLM
+          • During finetuning, freeze the original
+            network and only finetune adapters
+
+
+          Adapter modules:
+          • Small number of parameters -> low
+            memory/compute overheads
+          • Near-identity initialization -> stable training
+            of the adapted model
+
+
+
+
+* Parameter-Efficient Transfer Learning for NLP. 2019                                      13
+Automated Approaches to Accelerate Machine Learning     Zhihao Jia | Stanford University
+
+
+
+          Adapter Tuning
+
+          • Comparable performance as full training
+          • Much fewer trainable parameters
+
+
+
+
+* Parameter-Efficient Transfer Learning for NLP. 2019                                14
+Automated Approaches to Accelerate Machine Learning                                      Zhihao Jia | Stanford University
+
+
+
+         Low-Rank Adaptation (LoRA)
+         • Freeze pretrained model weights and inject trainable rank decomposition
+           matrices into each layer
+                                                                        ℎ
+                    ℎ
+
+
+
+               Pretrained                   Update                   Pretrained                𝐵=0
+
+                Weight                      Weight                    Weight                        𝑟
+
+
+               𝑊∈ℝ        𝑑×𝑑
+                                         ∆𝑊 ∈ ℝ       𝑑×𝑑            𝑊 ∈ ℝ𝑑×𝑑            𝐴 = 𝒩(0, 𝜎 2 )
+
+
+                                                                        𝑥
+                    𝑥
+                                                                                   𝑑
+                                    𝑑
+                                                                                ℎ = 𝑊𝑥 + 𝐵𝐴𝑥
+                                ℎ = 𝑊𝑥 + ∆𝑊𝑥
+                          Full Finetuning                                         LoRA
+* LORA: Low-Rank Adaption of Large Language Models. Hu et al. 2021                                                    15
+Automated Approaches to Accelerate Machine Learning                  Zhihao Jia | Stanford University
+
+
+
+         Low-Rank Adaptation (LoRA)
+
+
+
+
+                                                                                                16
+* LORA: Low-Rank Adaption of Large Language Models. Hu et al. 2021
+Automated Approaches to Accelerate Machine Learning                                           Zhihao Jia | Stanford University
+
+
+
+         Low-Rank Adaptation (LoRA)
+
+         • Apply LoRA to Attention                                   • Apply LoRA to MLP layer
+
+
+                           Multi-Head
+                          Self Attention
+                                                                                𝑊2      Δ𝑊2
+
+
+                                                                               ReLU
+       𝑊𝑞          Δ𝑊𝑞         𝑊𝑘          𝑊𝑣          Δ𝑊𝑣
+
+
+
+                              Input                                             𝑊1      Δ𝑊1
+
+
+                                                                                Input
+                                                                                                                         17
+* LORA: Low-Rank Adaption of Large Language Models. Hu et al. 2021
+Automated Approaches to Accelerate Machine Learning                                     Zhihao Jia | Stanford University
+
+
+
+           LoRA Does Not Increase Inference Latency
+
+
+
+       ℎ                                                        ℎ                   ℎ
+
+
+                                                                           Update
+  Pretrained                       𝐵=0                        Pretrained                        Adapted
+                                                                           Weight
+   Weight                                                      Weight                           Weight
+                                     𝑟
+                                                                           Δ𝑊
+  𝑊∈ℝ        𝑑×𝑑             𝐴 = 𝒩(0, 𝜎 2)                    𝑊∈ℝ    𝑑×𝑑                   𝑊 ′ = 𝑊 + Δ𝑊
+                                                                           =𝐵×𝐴
+       𝑥                                                        𝑥                   𝑥
+
+
+
+                                                                                                                   18
+* LORA: Low-Rank Adaption of Large Language Models. Hu et al. 2021
+Automated Approaches to Accelerate Machine Learning                   Zhihao Jia | Stanford University
+
+
+
+         LoRA Variant 1 (LoHa): Low-Rank Hadamard Product
+
+         • Use Hadamard (element-wise) product
+         • ∆W can have the same number of trainable parameters but a higher rank
+           and expressivity
+
+
+
+
+                                                                                                   19
+Automated Approaches to Accelerate Machine Learning                      Zhihao Jia | Stanford University
+
+
+
+         LoRA Variant 2 (LoKr): Low-Rank Kronecker Product
+
+         • Replace matrix product with Kronecker product
+         • Preserve the rank of the original weight matrix through Kronecker product
+
+
+
+
+                                                                                                      20
+Automated Approaches to Accelerate Machine Learning   Zhihao Jia | Stanford University
+
+
+
+         Outline: LLM Finetuning Methods
+
+         • Tuning prompts
+               • Prompt engineering
+               • Prefix tuning
+
+
+         • Tuning adapters
+               • LoRA: Low-Rank Adaptation
+               • QLoRA: quantization + LoRA
+               • Side tuning
+               • Serving adapters
+
+
+
+
+                                                                                   21
+Automated Approaches to Accelerate Machine Learning                    Zhihao Jia | Stanford University
+
+
+
+         Quantization
+
+         Quantization: converting a data type into fewer bits
+         Example: FP32 tensor -> Int8 tensor with range [−128, 127]:
+
+
+         Quantization:
+
+
+         Dequantization:
+
+
+
+              Issue: when there are large magnitude values, quantization bins
+              are not well utilized
+
+                                                                                                    22
+Automated Approaches to Accelerate Machine Learning                         Zhihao Jia | Stanford University
+
+
+
+         Block-wise Quantization
+
+         Chunk input tensor into blocks that are independently quantized
+         Each block has its own quantization constant 𝑐𝑖 saved in FP32
+
+                                                              32
+         • Assume a block size of 𝐵, quantization overhead:        bits per parameter
+                                                              𝐵
+         • When B=64, block-wise quantization introduces an overhead of 0.5 bits
+           per parameter
+
+
+
+
+                                                                                                         23
+Automated Approaches to Accelerate Machine Learning                          Zhihao Jia | Stanford University
+
+
+
+          Block-wise Double Quantization
+
+          Quantization constants 𝐶2𝐹𝑃32 𝑖 of the first quantization as inputs to a
+          second quantization
+                         𝐼𝑁𝑇8
+                                                    127             𝐹𝑃32
+                        𝐶2    𝑖 = 𝑟𝑜𝑢𝑛𝑑(                 𝐹𝑃32     𝐶2     𝑖)
+                                          𝑎𝑏𝑠𝑚𝑎𝑥_𝑘(𝐶2         𝑘)
+
+          • Use 8-bit integers with a block size of 256 for the second quantization
+          • Reduce the block-wise quantization overhead from 32/64=0.5 bits to
+            8/64+32/(64*256)=0.127 bits
+
+
+
+
+QLORA: Efficient Finetuning of Quantized LLMs                                                             24
+Automated Approaches to Accelerate Machine Learning                           Zhihao Jia | Stanford University
+
+
+
+          QLoRA: Quantized LoRA
+
+
+
+
+          • QLoRA for a single linear layer
+
+
+                                  16-bit              4-bit frozen   16-bit LoRA
+                                  activations         weights        weights
+QLORA: Efficient Finetuning of Quantized LLMs                                                              25
+Automated Approaches to Accelerate Machine Learning   Zhihao Jia | Stanford University
+
+
+
+          QLoRA Achieves On-Par Performance as Full Finetuning
+
+
+
+
+QLORA: Efficient Finetuning of Quantized LLMs                                      26
+Automated Approaches to Accelerate Machine Learning   Zhihao Jia | Stanford University
+
+
+
+         Outline: LLM Finetuning Methods
+
+         • Tuning prompts
+               • Prompt engineering
+               • Prefix tuning
+
+
+         • Tuning adapters
+               • LoRA: Low-Rank Adaptation
+               • QLoRA: quantization + LoRA
+               • Side tuning
+               • Serving adapters
+
+
+
+
+                                                                                   27
+Automated Approaches to Accelerate Machine Learning                                                             Zhihao Jia | Stanford University
+
+
+
+         An Issue with LoRA (and Other Adapter Tuning Methods)
+
+         • Adapter networks reduce trainable weights and optimizer states
+         • But require saving intermediate activations for back propagation
+
+                                                                                      Reduce the               Reduce the
+                                                      Intermediate    197GB              weights         intermediate activations
+                                                        activations                      and the                  and the
+                               𝑊2       Δ𝑊2                                          optimzer states          optimzer states
+
+
+                                                                      420GB
+                              ReLU                     Optimizer
+                                                                                                                           Reduce all
+                                                        states                                         78GB
+                                                                                    197GB              24GB
+
+
+                                                                                                                      69GB
+                               𝑊1        Δ𝑊1           Weights        140GB         13GB               140GB           4GB
+                                                                                    36GB                              36GB
+
+                              Input
+                                                                   Full Funtuning   QLoRA               LST        QST (Ours)
+                      LoRA for MLP layers                                                                                                    28
+Automated Approaches to Accelerate Machine Learning                                                                      Zhihao Jia | Stanford University
+
+
+
+          Side Tuning
+
+          Use side networks (a smaller version of the
+          base model) as adapters                                                                                  Reduce the               Reduce the
+                                                                                   Intermediate    197GB              weights         intermediate activations
+                                                                                     activations                      and the                  and the
+                                                                                                                  optimzer states          optimzer states
+          Avoid backpropagating the base model
+                                                                                                   420GB
+          • No need to keep intermediate activations                                Optimizer
+                                                                                     states
+                                                                                                                                                        Reduce all
+                                                                                                                                    78GB
+                                                                                                                 197GB              24GB
+
+
+                                                                                                                                                   69GB
+                                                                                    Weights        140GB         13GB               140GB           4GB
+                                                                                                                 36GB                              36GB
+
+
+                                                                                                Full Funtuning   QLoRA               LST        QST (Ours)
+
+
+
+
+* Quantized Side Tuning: Fast and Memory-Efficient Tuning of Quantized Large Language Models.                                                                    29
+Automated Approaches to Accelerate Machine Learning                                                                                Zhihao Jia | Stanford University
+
+
+
+         Quantized Side Tuning in Two Steps
+
+         1. 4-bit block-wise, double
+            quantization                                             Output                          Output                        Output
+
+                                                                                                                                                            Upsample
+
+                                                                    LM head                          LM head                       LM head
+                                                                                                                     Dequantize             Dequantize
+                                                                                                                      to 16bit               to 16bit
+
+
+                                                                                                                                                                            Task Switch
+
+
+
+                                                                                    Step 1                        Step 2
+
+                                                                                                                                            Dequantize
+                                                                                                                                             to 16bit
+                                                                               4-bit Quantization               Side Tuning
+
+
+
+
+                                                                                                                                                         Downsample
+                                                                   Embedding                        Embedding                     Embedding
+                                                                                                                                                                         Forward
+                                                                                                                                                                       Backprogation
+                                                                     Input                            Input                         Input
+
+
+
+
+Quantized Side Tuning: Fast and Memory-Efficient Tuning of Quantized Large Language Models                                                                                         30
+Automated Approaches to Accelerate Machine Learning                                                                     Zhihao Jia | Stanford University
+
+
+
+         Quantized Side Tuning in Two Steps
+
+         1. 4-bit block-wise, double                                         Base LLM                                   Side network
+            quantization
+         2. Introduce a side network                                                  Add & Norm
+
+            separated from the base LLM                                              Feed Forward
+                                                                                                                            Add & Norm
+
+                                                                                                                           Feed Forward
+                                                                                          a
+
+                                                                                                                            Add & Norm
+                                                                                      Add & Norm
+                                                                                                                             Multi-head
+                                                                                                          Downsample
+                                                                                                                             Attention
+                                                                                   Multi-head Attention
+                                                                                            a
+
+
+
+
+                                                                                                           MaxPooling
+                                                                                                             Linear
+                                                                                                             LoRA
+Quantized Side Tuning: Fast and Memory-Efficient Tuning of Quantized Large Language Models                                                           31
+Automated Approaches to Accelerate Machine Learning                                                                                Zhihao Jia | Stanford University
+
+
+
+         Quantized Side Tuning in Two Steps
+
+         1. 4-bit block-wise, double                                                                                                                       Side network
+            quantization                                             Output                          Output                        Output
+
+         2. Introduce a side network                                                                                                                        Upsample
+
+
+            separated from the base LLM                             LM head                          LM head
+                                                                                                                     Dequantize
+                                                                                                                                   LM head
+                                                                                                                                            Dequantize
+
+            • Avoids backpropagation                                                                                  to 16bit               to 16bit
+
+
+
+              through the base LLM                                                                                                                                          Task Switch
+
+
+
+                                                                                    Step 1                        Step 2
+
+                                                                                                                                            Dequantize
+                                                                                                                                             to 16bit
+                                                                               4-bit Quantization               Side Tuning
+        Key insight: information flows
+        from base to side but not the
+        other way                                                  Embedding                        Embedding                     Embedding              Downsample
+
+                                                                                                                                                                         Forward
+                                                                                                                                                                       Backprogation
+                                                                     Input                            Input                         Input
+
+
+
+
+Quantized Side Tuning: Fast and Memory-Efficient Tuning of Quantized Large Language Models                                                                                         32
+Automated Approaches to Accelerate Machine Learning                               Zhihao Jia | Stanford University
+
+
+
+         Quantized Side Tuning
+
+         • Same accuracy as QLoRA while requiring less memory
+
+
+
+
+                                                                                QLoRA-70B
+                                                                                QST-70B
+         On-par chatbot performance as others                      Writing
+                                                                                LLaMA-2-70B
+
+         (Use GPT-4 as a judge)                       Humanities             Roleplay
+
+
+
+                                                      STEM                        Reasoning
+                                                                     0123456789
+
+
+
+                                                      Extraction             Math
+                                                                   Coding
+                                                                                                               33
+Automated Approaches to Accelerate Machine Learning   Zhihao Jia | Stanford University
+
+
+
+         Recap: Efficient LLM Finetuning Methods
+
+         • Tuning prompts
+               • Prompt engineering
+               • Prefix tuning
+
+
+         • Tuning adapters
+               • LoRA: Low-Rank Adaptation
+               • QLoRA: quantization + LoRA
+               • Side tuning
+
+
+
+
+                                                                                   34
+
